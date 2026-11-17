@@ -6,7 +6,6 @@
 <title>Can Collage Converter</title>
 <style>
 :root{--bg:#f6f6f4;--fg:#1a1a1a;--card:#fff;--line:#d9d9d4;--acc:#c8102e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-:root:not([data-theme="light"]){}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161616;--fg:#eee;--card:#222;--line:#3a3a3a;--acc:#ff4d63;color-scheme:dark}}
 :root[data-theme="dark"]{--bg:#161616;--fg:#eee;--card:#222;--line:#3a3a3a;--acc:#ff4d63;color-scheme:dark}
 *{box-sizing:border-box}
@@ -14,17 +13,28 @@ body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-appl
 main{max-width:960px;margin:0 auto;padding:20px 16px 40px}
 h1{font-size:20px;margin:0 0 4px}
 p.sub{margin:0 0 16px;opacity:.7}
-.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:14px}
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .slot{background:var(--card);border:1.5px dashed var(--line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
 .slot.has{border-style:solid}
-.slot b{font-size:13px}
-.slot small{opacity:.6}
+.slot b{font-size:13px}.slot small{opacity:.6}
 .slot img{max-width:100%;max-height:100px;object-fit:contain}
 .slot input{display:none}
-.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0}
+input[type=url],input[type=text]{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);flex:1;min-width:200px}
 select,button{font:inherit;padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
 button:disabled{opacity:.4}
+#status{font-size:13px;opacity:.75;min-height:18px}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-top:10px}
+.th{display:none;margin:0;border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--bg)}
+.th.ready{display:block}
+.only .th[data-bad="1"]{display:none}
+.th img{width:100%;height:120px;object-fit:contain;background:#fff;border-radius:4px;display:block}
+.th .meta{font-size:11px;opacity:.65;margin:4px 0;display:flex;justify-content:space-between}
+.th .tag{color:var(--acc);font-weight:600}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.btns button{padding:5px 0;font-size:12px}
 .out{display:grid;grid-template-columns:1fr;gap:16px}
 @media(min-width:720px){.out{grid-template-columns:2fr 1fr}}
 .out figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}
@@ -35,18 +45,28 @@ figcaption{display:flex;justify-content:space-between;align-items:center;margin-
 <body>
 <main>
 <h1>Can Collage Converter</h1>
-<p class="sub">Add the photos of one can. Everything runs in your browser; nothing is uploaded.</p>
+<p class="sub">Load photos from a page link or from files, then download the collage and the main card.</p>
+
+<div class="box">
+  <b>Load from a web page</b>
+  <div class="row">
+    <input id="url" type="url" placeholder="Paste the link to the page with the can">
+    <button class="primary" id="scan">Find photos</button>
+  </div>
+  <div id="status"></div>
+  <div class="row">
+    <label><input type="checkbox" id="onlycan" checked> Only can-like photos (hides small images, banners, logos)</label>
+    <button id="auto" disabled>Auto-fill from first photos</button>
+  </div>
+  <div id="thumbs" class="thumbs only"></div>
+</div>
 
 <div class="slots" id="slots"></div>
 
 <div class="row">
-  <label>Format
-    <select id="fmt"><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option><option value="image/webp">WebP</option></select>
-  </label>
-  <label>Margin
-    <select id="mar"><option value="0.03">Small</option><option value="0.05" selected>Normal</option><option value="0.08">Large</option></select>
-  </label>
-  <label>File name <input id="name" value="can" style="font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);width:120px"></label>
+  <label>Format <select id="fmt"><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option><option value="image/webp">WebP</option></select></label>
+  <label>Margin <select id="mar"><option value="0.03">Small</option><option value="0.05" selected>Normal</option><option value="0.08">Large</option></select></label>
+  <label>File name <input id="name" type="text" value="can" style="flex:none;min-width:0;width:120px"></label>
   <button class="primary" id="both" disabled>Download both</button>
 </div>
 
@@ -59,36 +79,35 @@ figcaption{display:flex;justify-content:space-between;align-items:center;margin-
 </main>
 
 <script>
-const SLOTS=[["main","Main side",true],["second","Second side",false],["back","Back",false],["top","Top",false]];
-const imgs={};          // key -> {img, box}
 const $=id=>document.getElementById(id);
+const SLOTS=[["main","Main side",true],["second","Second side",false],["back","Back",false],["top","Top",false]];
+const KEYS=SLOTS.map(s=>s[0]);
+const LABEL={main:"Main",second:"2nd",back:"Back",top:"Top"};
+const BADURL=/logo|icon|sprite|avatar|banner|flag|button|placeholder|loading|social|payment|badge/i;
+const imgs={},slotEls={};
 
-// Collage geometry (matches the template: 3 tall cells + 2 squares on the right)
+// Collage geometry (3 tall cells + 2 squares on the right)
 const W=2464,H=1500,B=20;
-const SQ=(H-3*B)/2;                         // square side
-const TALL=(W-5*B-SQ)/3;                    // tall cell width
+const SQ=(H-3*B)/2, TALL=(W-5*B-SQ)/3;
 
 SLOTS.forEach(([k,label,req])=>{
   const d=document.createElement("label");d.className="slot";
-  d.innerHTML=`<b>${label}</b><small>${req?"required":"optional"}</small><span class="pv">Tap to choose</span><input type="file" accept="image/*">`;
-  d.querySelector("input").onchange=e=>load(k,e.target.files[0],d);
-  $("slots").appendChild(d);
+  d.innerHTML=`<b>${label}</b><small>${req?"required":"optional"}</small><span class="pv">Tap to choose a file</span><input type="file" accept="image/*">`;
+  d.querySelector("input").onchange=e=>{
+    const f=e.target.files[0];if(!f)return;
+    const im=new Image();im.onload=()=>setImage(k,im);im.src=URL.createObjectURL(f);
+  };
+  $("slots").appendChild(d);slotEls[k]=d;
 });
 
-function load(k,file,el){
-  if(!file)return;
-  const img=new Image();
-  img.onload=()=>{
-    imgs[k]={img,box:trimBox(img)};
-    el.classList.add("has");
-    el.querySelector(".pv").innerHTML="";
-    const t=el.querySelector(".pv");t.appendChild(Object.assign(new Image(),{src:img.src}));
-    render();
-  };
-  img.src=URL.createObjectURL(file);
+function setImage(k,img){
+  imgs[k]={img,box:trimBox(img)};
+  const el=slotEls[k],pv=el.querySelector(".pv");
+  el.classList.add("has");pv.innerHTML="";
+  const t=new Image();t.src=img.src;pv.appendChild(t);
+  tagThumbs();render();
 }
 
-// Find bounding box of non-white content
 function trimBox(img){
   const w=img.naturalWidth,h=img.naturalHeight;
   const c=document.createElement("canvas");c.width=w;c.height=h;
@@ -96,47 +115,39 @@ function trimBox(img){
   x.drawImage(img,0,0);
   const d=x.getImageData(0,0,w,h).data;
   let x0=w,y0=h,x1=-1,y1=-1;
-  for(let y=0;y<h;y++){for(let xx=0;xx<w;xx++){
+  for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){
     const i=(y*w+xx)*4;
     const bg=d[i+3]<10||(d[i]>240&&d[i+1]>240&&d[i+2]>240);
     if(!bg){if(xx<x0)x0=xx;if(xx>x1)x1=xx;if(y<y0)y0=y;if(y>y1)y1=y;}
-  }}
+  }
   if(x1<0)return{sx:0,sy:0,sw:w,sh:h};
   return{sx:x0,sy:y0,sw:x1-x0+1,sh:y1-y0+1};
 }
 
-// Draw image fitted inside a box with margin, centered
 function place(ctx,item,x,y,w,h,m){
   const {img,box}=item;
-  const aw=w*(1-2*m),ah=h*(1-2*m);
-  const s=Math.min(aw/box.sw,ah/box.sh);
+  const s=Math.min(w*(1-2*m)/box.sw,h*(1-2*m)/box.sh);
   const dw=box.sw*s,dh=box.sh*s;
   ctx.drawImage(img,box.sx,box.sy,box.sw,box.sh,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
 }
 
 function render(){
-  const m=parseFloat($("mar").value);
-  // Collage
+  const m=parseFloat($("mar").value)*0.6;
   const c=$("collage");c.width=W;c.height=H;
-  const g=c.getContext("2d");
-  g.imageSmoothingQuality="high";
-  g.fillStyle="#000";g.fillRect(0,0,W,H);
-  g.fillStyle="#fff";
+  const g=c.getContext("2d");g.imageSmoothingQuality="high";
+  g.fillStyle="#000";g.fillRect(0,0,W,H);g.fillStyle="#fff";
   const cells=[];
   for(let i=0;i<3;i++)cells.push([B+i*(TALL+B),B,TALL,H-2*B]);
   const rx=B+3*(TALL+B);
-  cells.push([rx,B,SQ,SQ]);                 // right-top (stays empty, as in the template)
-  cells.push([rx,2*B+SQ,SQ,SQ]);            // right-bottom: top of can
+  cells.push([rx,B,SQ,SQ]);cells.push([rx,2*B+SQ,SQ,SQ]);
   cells.forEach(r=>g.fillRect(...r));
-  ["main","second","back"].forEach((k,i)=>{if(imgs[k])place(g,imgs[k],...cells[i],m*0.6)});
-  if(imgs.top)place(g,imgs.top,...cells[4],m*0.6);
+  ["main","second","back"].forEach((k,i)=>{if(imgs[k])place(g,imgs[k],...cells[i],m)});
+  if(imgs.top)place(g,imgs.top,...cells[4],m);
 
-  // Main card 2:3
   const k=$("card");k.width=1600;k.height=2400;
   const h=k.getContext("2d");h.imageSmoothingQuality="high";
   h.fillStyle="#fff";h.fillRect(0,0,1600,2400);
-  if(imgs.main)place(h,imgs.main,0,0,1600,2400,m*0.6);
-
+  if(imgs.main)place(h,imgs.main,0,0,1600,2400,m);
   const ok=!!imgs.main;
   ["dl1","dl2","both"].forEach(i=>$(i).disabled=!ok);
 }
@@ -145,15 +156,74 @@ function save(canvas,suffix){
   const type=$("fmt").value,ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[type];
   canvas.toBlob(b=>{
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(b);
-    a.download=`${$("name").value||"can"}-${suffix}.${ext}`;
-    a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    a.href=URL.createObjectURL(b);a.download=`${$("name").value||"can"}-${suffix}.${ext}`;a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   },type,0.92);
 }
 $("dl1").onclick=()=>save($("collage"),"collage");
 $("dl2").onclick=()=>save($("card"),"card");
 $("both").onclick=()=>{save($("card"),"card");setTimeout(()=>save($("collage"),"collage"),400)};
 $("mar").onchange=render;
+
+// ---- Load from a page link ----
+function setStatus(t){$("status").textContent=t}
+
+function goodThumbs(){return [...$("thumbs").children].filter(f=>f.classList.contains("ready")&&f.dataset.bad!=="1")}
+
+function updateStatus(){
+  const all=[...$("thumbs").children];
+  const ready=all.filter(f=>f.classList.contains("ready")).length;
+  const good=goodThumbs().length;
+  setStatus(ready===all.length?`Done: ${good} can-like photos, ${ready-good} filtered out.`:`Checking images… ${ready}/${all.length}`);
+  $("auto").disabled=good===0;
+}
+
+function tagThumbs(){
+  [...$("thumbs").children].forEach(f=>{
+    const im=f.querySelector("img");
+    f.querySelector(".tag").textContent=KEYS.filter(k=>imgs[k]&&imgs[k].img===im).map(k=>LABEL[k]).join(", ");
+  });
+}
+
+function addThumb(url){
+  const fig=document.createElement("figure");fig.className="th";
+  const im=new Image();
+  im.onload=()=>{
+    const w=im.naturalWidth,h=im.naturalHeight,r=w/h;
+    fig.dataset.bad=(Math.min(w,h)<300||r<.35||r>1.8||BADURL.test(url))?"1":"0";
+    fig.querySelector(".dim").textContent=`${w}×${h}`;
+    fig.classList.add("ready");updateStatus();
+  };
+  im.onerror=()=>{fig.remove();updateStatus()};
+  im.src="/api/img?url="+encodeURIComponent(url);
+  const meta=document.createElement("div");meta.className="meta";
+  meta.innerHTML='<span class="dim"></span><span class="tag"></span>';
+  const btns=document.createElement("div");btns.className="btns";
+  KEYS.forEach(k=>{
+    const b=document.createElement("button");b.textContent=LABEL[k];
+    b.onclick=()=>setImage(k,im);btns.appendChild(b);
+  });
+  fig.append(im,meta,btns);$("thumbs").appendChild(fig);
+}
+
+$("scan").onclick=async()=>{
+  const u=$("url").value.trim();if(!u)return;
+  $("thumbs").innerHTML="";$("auto").disabled=true;
+  setStatus("Searching the page…");
+  try{
+    const r=await fetch("/api/scan?url="+encodeURIComponent(u));
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||("status "+r.status));
+    if(!j.images.length){setStatus("No images found on that page.");return}
+    setStatus(`Found ${j.images.length} images, checking…`);
+    j.images.forEach(addThumb);
+  }catch(e){setStatus("Error: "+e.message)}
+};
+$("url").addEventListener("keydown",e=>{if(e.key==="Enter")$("scan").click()});
+$("onlycan").onchange=e=>$("thumbs").classList.toggle("only",e.target.checked);
+$("auto").onclick=()=>{
+  goodThumbs().slice(0,4).forEach((f,i)=>setImage(KEYS[i],f.querySelector("img")));
+};
 render();
 </script>
 </body>
