@@ -18,7 +18,7 @@ p.sub{margin:0 0 16px;opacity:.7}
 .slot{background:var(--card);border:1.5px dashed var(--line);border-radius:10px;padding:10px;text-align:center;cursor:pointer;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
 .slot.has{border-style:solid}
 .slot b{font-size:13px}.slot small{opacity:.6}
-.slot img{max-width:100%;max-height:100px;object-fit:contain}
+.slot canvas{max-width:100%;max-height:100px;background:#fff;border-radius:4px}
 .slot input{display:none}
 .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:10px 0}
 input[type=url],input[type=text]{font:inherit;padding:9px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);flex:1;min-width:200px}
@@ -66,6 +66,7 @@ figcaption{display:flex;justify-content:space-between;align-items:center;margin-
 <div class="row">
   <label>Format <select id="fmt"><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option><option value="image/webp">WebP</option></select></label>
   <label>Margin <select id="mar"><option value="0.03">Small</option><option value="0.05" selected>Normal</option><option value="0.08">Large</option></select></label>
+  <label>Background cut <input id="tol" type="range" min="0" max="90" value="34" style="vertical-align:middle;width:110px"></label>
   <label>File name <input id="name" type="text" value="can" style="flex:none;min-width:0;width:120px"></label>
   <button class="primary" id="both" disabled>Download both</button>
 </div>
@@ -100,35 +101,77 @@ SLOTS.forEach(([k,label,req])=>{
   $("slots").appendChild(d);slotEls[k]=d;
 });
 
-function setImage(k,img){
-  imgs[k]={img,box:trimBox(img)};
-  const el=slotEls[k],pv=el.querySelector(".pv");
-  el.classList.add("has");pv.innerHTML="";
-  const t=new Image();t.src=img.src;pv.appendChild(t);
-  tagThumbs();render();
+const tol=()=>+$("tol").value;
+function setImage(k,src){
+  imgs[k]={src,img:cleanImage(src,tol())};
+  showSlot(k);tagThumbs();render();
 }
+function showSlot(k){
+  const el=slotEls[k],pv=el.querySelector(".pv");
+  el.classList.add("has");pv.innerHTML="";pv.appendChild(mini(imgs[k].img));
+}
+function mini(c){
+  const s=Math.min(1,200/c.height,200/c.width);
+  const m=document.createElement("canvas");
+  m.width=Math.max(1,Math.round(c.width*s));m.height=Math.max(1,Math.round(c.height*s));
+  m.getContext("2d").drawImage(c,0,0,m.width,m.height);return m;
+}
+let tolTimer;
+$("tol").oninput=()=>{
+  clearTimeout(tolTimer);
+  tolTimer=setTimeout(()=>{
+    KEYS.forEach(k=>{if(imgs[k]){imgs[k].img=cleanImage(imgs[k].src,tol());showSlot(k)}});
+    render();
+  },150);
+};
 
-function trimBox(img){
-  const w=img.naturalWidth,h=img.naturalHeight;
+// Remove the background (flood fill from the edges), make it pure white, crop to the can
+function cleanImage(src,tolerance){
+  let w=src.naturalWidth,h=src.naturalHeight;
+  const sc=Math.min(1,3000/Math.max(w,h));
+  w=Math.max(1,Math.round(w*sc));h=Math.max(1,Math.round(h*sc));
   const c=document.createElement("canvas");c.width=w;c.height=h;
   const x=c.getContext("2d",{willReadFrequently:true});
-  x.drawImage(img,0,0);
-  const d=x.getImageData(0,0,w,h).data;
-  let x0=w,y0=h,x1=-1,y1=-1;
-  for(let y=0;y<h;y++)for(let xx=0;xx<w;xx++){
-    const i=(y*w+xx)*4;
-    const bg=d[i+3]<10||(d[i]>240&&d[i+1]>240&&d[i+2]>240);
-    if(!bg){if(xx<x0)x0=xx;if(xx>x1)x1=xx;if(y<y0)y0=y;if(y>y1)y1=y;}
+  x.fillStyle="#fff";x.fillRect(0,0,w,h);
+  x.drawImage(src,0,0,w,h);
+  const id=x.getImageData(0,0,w,h),d=id.data;
+  const rs=[],gs=[],bs=[];
+  const smp=(px,py)=>{const i=(py*w+px)*4;rs.push(d[i]);gs.push(d[i+1]);bs.push(d[i+2]);};
+  const sx=Math.max(1,w>>6),sy=Math.max(1,h>>6);
+  for(let i=0;i<w;i+=sx){smp(i,0);smp(i,h-1)}
+  for(let j=0;j<h;j+=sy){smp(0,j);smp(w-1,j)}
+  const med=a=>a.sort((p,q)=>p-q)[a.length>>1];
+  const br=med(rs),bg=med(gs),bb=med(bs);
+  const isBg=p=>{const i=p*4;return Math.abs(d[i]-br)<=tolerance&&Math.abs(d[i+1]-bg)<=tolerance&&Math.abs(d[i+2]-bb)<=tolerance};
+  const seen=new Uint8Array(w*h),stack=new Int32Array(w*h);let sp=0;
+  const push=p=>{if(!seen[p]&&isBg(p)){seen[p]=1;stack[sp++]=p}};
+  for(let i=0;i<w;i++){push(i);push((h-1)*w+i)}
+  for(let j=0;j<h;j++){push(j*w);push(j*w+w-1)}
+  while(sp){
+    const p=stack[--sp],px=p%w,py=(p-px)/w;
+    if(px>0)push(p-1);if(px<w-1)push(p+1);if(py>0)push(p-w);if(py<h-1)push(p+w);
   }
-  if(x1<0)return{sx:0,sy:0,sw:w,sh:h};
-  return{sx:x0,sy:y0,sw:x1-x0+1,sh:y1-y0+1};
+  const rc=new Uint32Array(h),cc=new Uint32Array(w);
+  for(let p=0;p<w*h;p++){
+    if(seen[p]){const i=p*4;d[i]=d[i+1]=d[i+2]=255;d[i+3]=255}
+    else{const px=p%w;rc[(p-px)/w]++;cc[px]++}
+  }
+  x.putImageData(id,0,0);
+  const mc=Math.max(2,Math.round(Math.max(w,h)*0.002));
+  let x0=0,x1=w-1,y0=0,y1=h-1;
+  while(x0<w&&cc[x0]<mc)x0++;while(x1>x0&&cc[x1]<mc)x1--;
+  while(y0<h&&rc[y0]<mc)y0++;while(y1>y0&&rc[y1]<mc)y1--;
+  if(x0>=x1||y0>=y1)return c;
+  const o=document.createElement("canvas");o.width=x1-x0+1;o.height=y1-y0+1;
+  o.getContext("2d").drawImage(c,x0,y0,o.width,o.height,0,0,o.width,o.height);
+  return o;
 }
 
 function place(ctx,item,x,y,w,h,m){
-  const {img,box}=item;
-  const s=Math.min(w*(1-2*m)/box.sw,h*(1-2*m)/box.sh);
-  const dw=box.sw*s,dh=box.sh*s;
-  ctx.drawImage(img,box.sx,box.sy,box.sw,box.sh,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
+  const c=item.img;
+  const s=Math.min(w*(1-2*m)/c.width,h*(1-2*m)/c.height);
+  const dw=c.width*s,dh=c.height*s;
+  ctx.drawImage(c,x+(w-dw)/2,y+(h-dh)/2,dw,dh);
 }
 
 function render(){
@@ -174,6 +217,11 @@ function updateStatus(){
   const all=[...$("thumbs").children];
   const ready=all.filter(f=>f.classList.contains("ready")).length;
   const good=goodThumbs().length;
+  if(ready===all.length&&ready>0&&good===0&&$("onlycan").checked){
+    $("onlycan").checked=false;$("thumbs").classList.remove("only");
+    setStatus(`No photos looked like cans, so all ${ready} images are shown. Pick the right ones manually.`);
+    $("auto").disabled=true;return;
+  }
   setStatus(ready===all.length?`Done: ${good} can-like photos, ${ready-good} filtered out.`:`Checking images… ${ready}/${all.length}`);
   $("auto").disabled=good===0;
 }
@@ -181,7 +229,7 @@ function updateStatus(){
 function tagThumbs(){
   [...$("thumbs").children].forEach(f=>{
     const im=f.querySelector("img");
-    f.querySelector(".tag").textContent=KEYS.filter(k=>imgs[k]&&imgs[k].img===im).map(k=>LABEL[k]).join(", ");
+    f.querySelector(".tag").textContent=KEYS.filter(k=>imgs[k]&&imgs[k].src===im).map(k=>LABEL[k]).join(", ");
   });
 }
 
@@ -190,7 +238,7 @@ function addThumb(url){
   const im=new Image();
   im.onload=()=>{
     const w=im.naturalWidth,h=im.naturalHeight,r=w/h;
-    fig.dataset.bad=(Math.min(w,h)<300||r<.35||r>1.8||BADURL.test(url))?"1":"0";
+    fig.dataset.bad=(Math.min(w,h)<150||r<.25||r>4||BADURL.test(url))?"1":"0";
     fig.querySelector(".dim").textContent=`${w}×${h}`;
     fig.classList.add("ready");updateStatus();
   };
