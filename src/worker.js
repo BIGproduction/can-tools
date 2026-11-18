@@ -23,6 +23,7 @@ async function scan(target) {
   });
   if (!res.ok) return bad("The page returned status " + res.status, 502);
   const base = res.url;
+  const html = await res.text();
   const found = [];
   const add = (v) => {
     if (!v) return;
@@ -36,19 +37,20 @@ async function scan(target) {
     let best = null, bw = -1;
     for (const part of s.split(",")) {
       const [u, d] = part.trim().split(/\s+/);
-      const w = parseFloat(d) || 0;
-      if (u && w >= bw) { best = u; bw = w; }
+      const wd = parseFloat(d) || 0;
+      if (u && wd >= bw) { best = u; bw = wd; }
     }
     add(best);
   };
 
+  // 1) Structured pass: img/source/meta/links, including lazy-load attributes
   await new HTMLRewriter()
     .on("meta[property='og:image'], meta[name='twitter:image']", {
       element(e) { add(e.getAttribute("content")); },
     })
     .on("img", {
       element(e) {
-        for (const a of ["data-large", "data-original", "data-src", "data-lazy-src", "src"]) add(e.getAttribute(a));
+        for (const a of ["data-large", "data-original", "data-full", "data-zoom-image", "data-src", "data-lazy-src", "data-lazy", "src"]) add(e.getAttribute(a));
         addSet(e.getAttribute("srcset"));
         addSet(e.getAttribute("data-srcset"));
       },
@@ -60,10 +62,18 @@ async function scan(target) {
         if (h && /\.(jpe?g|png|webp)(\?|$)/i.test(h)) add(h);
       },
     })
-    .transform(res)
+    .transform(new Response(html, { headers: { "content-type": "text/html" } }))
     .text();
 
-  return Response.json({ page: base, images: [...new Set(found)].slice(0, 80) });
+  // 2) Raw pass: image URLs hidden in scripts, JSON, CSS or slider configs
+  const text = html.replace(/\\\//g, "/").replace(/&amp;/g, "&");
+  const EXT = "(?:jpe?g|png|webp)";
+  const reAbs = new RegExp("(?:https?:)?//[^\\s\"'<>()\\\\,]+?\\." + EXT + "(?:\\?[^\\s\"'<>()\\\\,]*)?(?=[\"'\\s,)<>\\\\]|$)", "gi");
+  const reRel = new RegExp("[\"'(]([^\\s\"'<>()\\\\,]+?\\." + EXT + "(?:\\?[^\\s\"'<>()\\\\,]*)?)(?=[\"')])", "gi");
+  for (const m of text.matchAll(reAbs)) add(m[0]);
+  for (const m of text.matchAll(reRel)) add(m[1]);
+
+  return Response.json({ page: base, images: [...new Set(found)].slice(0, 100) });
 }
 
 async function image(target) {
